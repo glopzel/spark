@@ -309,7 +309,6 @@ class Particle {
                     influence *
                     wave.strength;
 
-
                 forceX +=
                     cos(angle) *
                     force;
@@ -369,19 +368,14 @@ class Particle {
             this.y = 0;
         }
 
-
-        // ==================================
-        // BRIGHTNESS
-        // ==================================
-
         let targetBrightness =
-            20 +
-            strongestWave * 235;
+            60 + // strting point brightness
+            strongestWave * 245;
         // Sound makes particles more visible,
         // but NOT larger.
         targetBrightness *=
             lerp(
-                0.35,
+                0.5,
                 1,
                 energy
             );
