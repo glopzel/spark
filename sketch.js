@@ -3,12 +3,19 @@ let amplitude;
 
 let particles = [];
 let sparks = [];
+let waves = [];
 
 const NUM_PARTICLES = 500;
 const NUM_SPARKS = 120;
+const MAX_WAVES = 12;
 
 let volume = 0;
 let energy = 0;
+
+const ENERGY_EXPONENT = 0.7;
+
+let lastWave = 0;
+
 
 function setup() {
 
@@ -51,7 +58,6 @@ function setup() {
     }
 }
 
-
 function draw() {
     background(
         2,
@@ -62,18 +68,6 @@ function draw() {
 
     volume = amplitude.getLevel();
 
-
-    /*
-      Microphone levels are normally very small.
-  
-      We amplify the useful range.
-  
-      Change 0.025 if necessary:
-  
-      0.015 = more sensitive
-      0.025 = normal
-      0.050 = less sensitive
-    */
 
     energy = map(
         volume,
@@ -89,31 +83,139 @@ function draw() {
         1
     );
 
-
     /*
-      Non-linear response.
-  
-      This makes louder sounds much more
-      dramatically different from quiet ones.
+      Higher value = more sensitive
+      to quiet sounds.
+
+      0.35 = very sensitive
+      0.7  = balanced
+      1.0  = quiet until louder sound
     */
 
     energy = pow(
         energy,
-        0.35
+        ENERGY_EXPONENT
     );
 
-    for (let p of particles) {
-        p.update(energy);
-        p.display(energy);
+    let waveInterval = map(
+        energy,
+        0,
+        1,
+        1000,
+        150
+    );
+
+    if (
+        energy > 0.15 &&
+        millis() - lastWave > waveInterval &&
+        waves.length < MAX_WAVES
+    ) {
+        createWave();
+        lastWave = millis();
     }
 
+    for (let p of particles) {
+        p.update();
+        p.display();
+    }
+
+    for (
+        let i = waves.length - 1;
+        i >= 0;
+        i--
+    ) {
+
+        waves[i].update();
+        waves[i].display();
+
+        if (waves[i].dead()) {
+            waves.splice(i, 1);
+        }
+    }
 
     for (let s of sparks) {
-        s.update();
-        s.display();
+
+        s.update(energy);
+
+        s.display(energy);
+    }
+}
+
+function createWave() {
+
+    let x = random(width);
+    let y = random(height);
+
+    waves.push(
+        new Wave(
+            x,
+            y
+        )
+    );
+}
+
+class Wave {
+
+    constructor(x, y) {
+
+        this.x = x;
+        this.y = y;
+
+        this.radius = 0;
+
+        this.speed = random(
+            3,
+            7
+        );
+
+        this.maxRadius =
+            dist(
+                this.x,
+                this.y,
+                0,
+                0
+            ) +
+            max(
+                width,
+                height
+            );
+
+        this.strength = random(
+            20,
+            45
+        );
+
+        this.life = 255;
     }
 
-    drawAudioMeter();
+
+    update() {
+
+        this.radius += this.speed;
+
+        this.life -= 1.5;
+    }
+
+
+    display() {
+
+        /*
+          The wave itself is invisible.
+
+          It only pushes particles.
+
+          This keeps the visual clean.
+        */
+    }
+
+
+    dead() {
+
+        return (
+            this.radius >
+            this.maxRadius
+        );
+    }
 }
 
 class Particle {
@@ -123,117 +225,134 @@ class Particle {
         this.x = random(width);
         this.y = random(height);
 
-        this.vx = random(-0.1, 0.1);
-        this.vy = random(-0.1, 0.1);
+        this.vx = random(
+            -0.2,
+            0.2
+        );
+
+        this.vy = random(
+            -0.2,
+            0.2
+        );
+
+        // Fixed size
 
         this.size = random(
             0.6,
             1.8
         );
 
-
-        // Every particle reacts at a
-        // slightly different volume.
-
-        this.threshold = random(
-            0.15,
-            0.75
-        );
-
-
-        this.phase = random(
-            TWO_PI
-        );
+        this.brightness = 20;
     }
 
 
-    update(sound) {
-        let localEnergy = map(
-            sound,
-            this.threshold,
-            1,
-            0,
-            1
-        );
+    update() {
 
-        localEnergy = constrain(
-            localEnergy,
-            0,
-            1
-        );
+        let forceX = 0;
+        let forceY = 0;
+        let strongestWave = 0;
 
-        // CHAOTIC FLOW FIELD
-        let angle = noise(
-            this.x * 0.004,
-            this.y * 0.004,
-            frameCount * 0.002
-        ) * TWO_PI * 4;
+        for (let wave of waves) {
 
-        // SOUND → SPEED
-        /*
-          This is deliberately exaggerated.
-    
-          Quiet:
-            very slow
-    
-          Loud:
-            extremely fast
-        */
+            let dx =
+                this.x -
+                wave.x;
 
-        let targetSpeed = lerp(
-            0.1,
-            12,
-            localEnergy
-        );
+            let dy =
+                this.y -
+                wave.y;
+
+            let distance =
+                sqrt(
+                    dx * dx +
+                    dy * dy
+                );
 
 
-        let targetVX =
-            cos(angle) *
-            targetSpeed;
+            // Distance from the moving wavefront
 
-        let targetVY =
-            sin(angle) *
-            targetSpeed;
-
-
-        // How quickly the particle responds
-
-        let response =
-            0.02 +
-            localEnergy * 0.4;
+            let difference =
+                abs(
+                    distance -
+                    wave.radius
+                );
 
 
-        this.vx = lerp(
-            this.vx,
-            targetVX,
-            response
-        );
+            let influence =
+                map(
+                    difference,
+                    0,
+                    35,
+                    1,
+                    0
+                );
 
-        this.vy = lerp(
-            this.vy,
-            targetVY,
-            response
-        );
 
-        // HIGH ENERGY JITTER
-        if (localEnergy > 0.3) {
+            influence =
+                constrain(
+                    influence,
+                    0,
+                    1
+                );
 
-            this.vx +=
-                random(-1, 1) *
-                localEnergy *
-                1.5;
 
-            this.vy +=
-                random(-1, 1) *
-                localEnergy *
-                1.5;
+            if (influence > 0) {
+
+                let angle =
+                    atan2(
+                        dy,
+                        dx
+                    );
+
+
+                let force =
+                    influence *
+                    wave.strength;
+
+
+                forceX +=
+                    cos(angle) *
+                    force;
+
+                forceY +=
+                    sin(angle) *
+                    force;
+
+
+                strongestWave =
+                    max(
+                        strongestWave,
+                        influence
+                    );
+            }
         }
 
-        // MOVE
+        this.vx +=
+            forceX *
+            0.015;
+
+        this.vy +=
+            forceY *
+            0.015;
+
+        this.vx *= 0.985;
+
+        this.vy *= 0.985;
+
+        let speedBoost =
+            lerp(
+                0.2,
+                3,
+                energy
+            );
+
+
+        this.vx *= speedBoost;
+        this.vy *= speedBoost;
+
         this.x += this.vx;
         this.y += this.vy;
 
-        // WRAP
         if (this.x < 0) {
             this.x = width;
         }
@@ -249,128 +368,47 @@ class Particle {
         if (this.y > height) {
             this.y = 0;
         }
+
+
+        // ==================================
+        // BRIGHTNESS
+        // ==================================
+
+        let targetBrightness =
+            20 +
+            strongestWave * 235;
+        // Sound makes particles more visible,
+        // but NOT larger.
+        targetBrightness *=
+            lerp(
+                0.35,
+                1,
+                energy
+            );
+
+
+        this.brightness =
+            lerp(
+                this.brightness,
+                targetBrightness,
+                0.2
+            );
     }
 
 
-    display(sound) {
-        // INDIVIDUAL ENERGY
-        let localEnergy = map(
-            sound,
-            this.threshold,
-            1,
-            0,
-            1
-        );
-
-        localEnergy = constrain(
-            localEnergy,
-            0,
-            1
-        );
-
-        // COLOR
-        let r;
-        let g;
-        let b;
-
-
-        if (localEnergy < 0.35) {
-            // COOL / WEAK
-            r = 50;
-            g = 110;
-            b = 220;
-
-        } else if (localEnergy < 0.7) {
-
-            // ORANGE / HOT
-            let t = map(
-                localEnergy,
-                0.35,
-                0.7,
-                0,
-                1
-            );
-
-
-            r = 255;
-
-            g = lerp(
-                100,
-                210,
-                t
-            );
-
-            b = lerp(
-                20,
-                60,
-                t
-            );
-
-        } else {
-            // WHITE / VERY ENERGETIC
-            let t = map(
-                localEnergy,
-                0.7,
-                1,
-                0,
-                1
-            );
-
-
-            r = 255;
-
-            g = lerp(
-                210,
-                255,
-                t
-            );
-
-            b = lerp(
-                80,
-                255,
-                t
-            );
-        }
-
-        // BRIGHTNESS
-        let brightness = lerp(
-            70,
-            255,
-            localEnergy
-        );
-
+    display() {
 
         noStroke();
 
-        // GLOW
         fill(
-            r,
-            g,
-            b,
-            15 +
-            localEnergy * 50
+            255,
+            this.brightness
         );
 
         circle(
             this.x,
             this.y,
-            this.size *
-            (3 + localEnergy * 9)
-        );
-
-        // PARTICLE CORE
-        fill(
-            r,
-            g,
-            b,
-            brightness
-        );
-
-        circle(
-            this.x,
-            this.y,
-            this.size +
-            localEnergy * 1.5
+            this.size
         );
     }
 }
@@ -392,6 +430,8 @@ class Spark {
             20
         );
 
+        this.energy = 0;
+
         this.createArcs();
     }
 
@@ -400,7 +440,6 @@ class Spark {
 
         this.arcs = [];
 
-        // FIXED SPARK COMPLEXITY
         let count = floor(
             random(7, 13)
         );
@@ -420,20 +459,32 @@ class Spark {
     }
 
 
-    update() {
-
+    update(sound) {
+        this.energy = sound;
         this.age++;
 
-
         for (let arc of this.arcs) {
-
             arc.update();
         }
 
+        let sparkSpeed = lerp(
+            0.15,
+            2,
+            sound
+        );
+
+
+        this.age += sparkSpeed;
+
+
+        // ==================================
         // RESTART SPARK
+        // ==================================
+
         if (this.age >= this.life) {
 
             this.x = random(width);
+
             this.y = random(height);
 
             this.age = 0;
@@ -448,7 +499,11 @@ class Spark {
     }
 
 
-    display() {
+    display(sound) {
+
+        // ==================================
+        // NATURAL SPARK FADE
+        // ==================================
 
         let fade = map(
             this.age,
@@ -458,15 +513,42 @@ class Spark {
             0
         );
 
-        // TINY GLOW
+
+        fade = constrain(
+            fade,
+            0,
+            1
+        );
+
+        let audioVisibility = map(
+            sound,
+            0,
+            1,
+            0.02,
+            1
+        );
+
+
+        audioVisibility =
+            constrain(
+                audioVisibility,
+                0.02,
+                1
+            );
+
+
+        let finalAlpha =
+            fade *
+            audioVisibility;
+
         noStroke();
 
         fill(
-            50,
-            150,
             255,
-            25 * fade
+            25 *
+            finalAlpha
         );
+
 
         circle(
             this.x,
@@ -474,21 +556,19 @@ class Spark {
             14
         );
 
-        // ELECTRIC ARCS
         for (let arc of this.arcs) {
 
             arc.display(
-                fade
+                finalAlpha
             );
         }
 
-        // HOT CORE
         fill(
             255,
-            255,
-            255,
-            255 * fade
+            255 *
+            finalAlpha
         );
+
 
         circle(
             this.x,
@@ -498,7 +578,6 @@ class Spark {
     }
 }
 
-// ELECTRIC ARC
 class ElectricArc {
 
     constructor(
@@ -516,7 +595,9 @@ class ElectricArc {
 
         let steps = max(
             3,
-            floor(length / 1.5)
+            floor(
+                length / 1.5
+            )
         );
 
 
@@ -540,7 +621,9 @@ class ElectricArc {
                 sin(angle) *
                 1.5;
 
-            // ELECTRICAL JAGGEDNESS
+
+            // Jagged electrical movement
+
             angle += random(
                 -0.9,
                 0.9
@@ -564,11 +647,13 @@ class ElectricArc {
             120
         );
 
-        this.alpha = constrain(
-            this.alpha,
-            20,
-            255
-        );
+
+        this.alpha =
+            constrain(
+                this.alpha,
+                20,
+                255
+            );
     }
 
 
@@ -578,25 +663,18 @@ class ElectricArc {
             this.alpha *
             fade;
 
-
-        // BLUE PLASMA GLOW
         noFill();
 
         stroke(
-            30,
-            120,
             255,
-            a * 0.25
+            a * 0.15
         );
 
         strokeWeight(3);
 
         this.draw();
 
-        // WHITE ELECTRIC CORE
         stroke(
-            220,
-            245,
             255,
             a
         );
@@ -613,6 +691,7 @@ class ElectricArc {
 
         beginShape();
 
+
         for (
             let p of this.points
         ) {
@@ -622,8 +701,14 @@ class ElectricArc {
                 p.y
             );
         }
-
         endShape();
     }
 }
 
+function windowResized() {
+
+    resizeCanvas(
+        windowWidth,
+        windowHeight
+    );
+}
