@@ -16,6 +16,31 @@ const ENERGY_EXPONENT = 0.7;
 
 let lastWave = 0;
 
+function getFullScreen() {
+  return (
+    document.fullscreenElement ||
+    document.webkitFullScreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullScreenElement
+  );
+}
+
+function toggleScreen() {
+  if (getFullScreen()) {
+    document.exitFullscreen();
+  } else {
+    document.documentElement.requestFullscreen().catch(console.log);
+  }
+}
+
+document.addEventListener("click", () => {
+  toggleScreen();
+});
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+}
+
 
 function setup() {
 
